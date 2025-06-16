@@ -1,51 +1,88 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QWidget, QLineEdit, QVBoxLayout
+from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtCore import Qt
+
+# === Constants ===
+
+MIN_WIDTH = 300
+PADDING = 40  # Extra space for padding and cursor
+WINDOW_HEIGHT = 100
+
+STYLE_SHEET = """
+    QLineEdit {
+        background-color: rgba(30, 30, 30, 220);
+        color: white;
+        padding: 10px;
+        font-size: 18px;
+        border-radius: 8px;
+        border: 2px solid #444;
+    }
+"""
+
+PLACEHOLDER_TEXT = "Type something..."
+
 
 class OverlayInput(QWidget):
     def __init__(self):
         super().__init__()
+        self.init_ui()
 
-        # Make the window frameless, transparent, and always on top
+    def center_on_screen(self):
+        print(f"screen width: {self.width()}, height: {self.height()}")
+        screen = QApplication.primaryScreen().availableGeometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        print(f"Moving to x: {x}, y: {y}")
+        self.move(x, y)
+
+    def adjust_width_to_text(self):
+        fm = QFontMetrics(self.input.font())
+        text_width = fm.horizontalAdvance(self.input.text())
+        new_width = max(MIN_WIDTH, text_width + PADDING)
+        self.setFixedWidth(new_width)
+        self.center_on_screen()
+
+    def init_ui(self):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Tool  # Prevents taskbar icon
+            Qt.WindowType.Dialog
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(700, 100)
-        self
-        self.move(500, 300)  # Position on screen
+        self.setFixedHeight(WINDOW_HEIGHT)
+        self.setMinimumWidth(MIN_WIDTH)
+        self.center_on_screen()
 
-        # Layout and text field
+        # Layout and input
         layout = QVBoxLayout(self)
-        self.input = QLineEdit(self)
-        self.input.setPlaceholderText("Type something...")
-        self.input.setStyleSheet("""
-            QLineEdit {
-                background: rgba(30, 30, 30, 220);
-                color: white;
-                padding: 10px;
-                font-size: 18px;
-                border-radius: 10px;
-                border: 2px solid #555;
-            }
-        """)
-        layout.addWidget(self.input)
-        self.setLayout(layout)
+        layout.setContentsMargins(0, 0, 0, 0)
 
+        self.input = QLineEdit()
+        self.input.setPlaceholderText(PLACEHOLDER_TEXT)
+        self.input.setStyleSheet(STYLE_SHEET)
+        self.input.textChanged.connect(self.adjust_width_to_text)
         self.input.returnPressed.connect(self.on_enter)
+        layout.addWidget(self.input)
+
+        self.setLayout(layout)
+        self.input.setFocus()
+        self.adjust_width_to_text()  # Initialize width
 
         self.show()
-        self.input.setFocus()
-        print("i think i am ready")
+
+        # Request to keep window above (Wayland hack)
+        # if self.windowHandle() is not None:
+        #     self.windowHandle().setKeepAbove(True)
+
 
     def on_enter(self):
-        text = self.input.text()
-        print(f"You typed: {text}")
-        self.close()
+        print(self.input.text())
+        QApplication.quit()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = OverlayInput()
     sys.exit(app.exec())
+
