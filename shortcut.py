@@ -1,12 +1,14 @@
 import keyboard
 import subprocess
+import sys
+
+SHORTCUT = 'ctrl+8'
 
 def open_overlay():
-    subprocess.Popen(["python", "scrapbook\\qt_stuff.py"])
+    subprocess.Popen([sys.executable, "../qt_stuff.py"])
 
 if __name__ == "__main__":
-    # Listen for Ctrl+L+R pressed together
-    keyboard.add_hotkey('ctrl+l+r', open_overlay)
+    keyboard.add_hotkey(SHORTCUT, open_overlay)
 
-    print("Listening for Ctrl+L+R... (Press ESC to exit)")
+    print(f"Listening for {SHORTCUT}... (Press ESC to exit)")
     keyboard.wait('esc')

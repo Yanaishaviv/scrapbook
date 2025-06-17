@@ -29,11 +29,9 @@ class OverlayInput(QWidget):
         self.init_ui()
 
     def center_on_screen(self):
-        print(f"screen width: {self.width()}, height: {self.height()}")
         screen = QApplication.primaryScreen().availableGeometry()
         x = (screen.width() - self.width()) // 2
         y = (screen.height() - self.height()) // 2
-        print(f"Moving to x: {x}, y: {y}")
         self.move(x, y)
 
     def adjust_width_to_text(self):
@@ -71,11 +69,6 @@ class OverlayInput(QWidget):
 
         self.show()
 
-        # Request to keep window above (Wayland hack)
-        # if self.windowHandle() is not None:
-        #     self.windowHandle().setKeepAbove(True)
-
-
     def on_enter(self):
         print(self.input.text())
         QApplication.quit()
@@ -85,4 +78,3 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = OverlayInput()
     sys.exit(app.exec())
-
