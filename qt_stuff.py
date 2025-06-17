@@ -22,6 +22,7 @@ STYLE_SHEET = """
 
 PLACEHOLDER_TEXT = "Type something..."
 
+# === Logic ===
 
 class OverlayInput(QWidget):
     def __init__(self):
@@ -73,8 +74,10 @@ class OverlayInput(QWidget):
         print(self.input.text())
         QApplication.quit()
 
-
-if __name__ == "__main__":
+def show_overlay():
     app = QApplication(sys.argv)
     window = OverlayInput()
     sys.exit(app.exec())
+
+if __name__ == "__main__":
+    show_overlay()
