@@ -1,4 +1,5 @@
 import sys
+import os
 from PyQt6.QtWidgets import QApplication, QWidget, QLineEdit, QVBoxLayout
 from PyQt6.QtGui import QFontMetrics
 from PyQt6.QtCore import Qt
@@ -75,6 +76,7 @@ class OverlayInput(QWidget):
         QApplication.quit()
 
 def show_overlay():
+    os.system("flameshot gui -c -s")
     app = QApplication(sys.argv)
     window = OverlayInput()
     sys.exit(app.exec())
