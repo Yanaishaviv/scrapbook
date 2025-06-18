@@ -25,6 +25,7 @@ PLACEHOLDER_TEXT = "Type something..."
 
 # === Logic ===
 
+
 class OverlayInput(QWidget):
     def __init__(self):
         super().__init__()
@@ -45,9 +46,9 @@ class OverlayInput(QWidget):
 
     def init_ui(self):
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.Dialog
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Dialog
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedHeight(WINDOW_HEIGHT)
@@ -75,11 +76,13 @@ class OverlayInput(QWidget):
         print(self.input.text())
         QApplication.quit()
 
+
 def show_overlay():
     os.system("flameshot gui -c -s")
     app = QApplication(sys.argv)
     window = OverlayInput()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     show_overlay()

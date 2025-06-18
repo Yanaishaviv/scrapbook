@@ -4,16 +4,16 @@ import sys
 import qt_stuff
 from inspect import getsourcefile
 
-SHORTCUT = '<ctrl>+8'
+SHORTCUT = "<ctrl>+8"
 command_file = getsourcefile(qt_stuff)
+
 
 def open_overlay():
     subprocess.run([sys.executable, command_file])
 
+
 if __name__ == "__main__":
-    listener = keyboard.GlobalHotKeys({
-        SHORTCUT: open_overlay
-    })
+    listener = keyboard.GlobalHotKeys({SHORTCUT: open_overlay})
     listener.start()
     print(f"Listening for {SHORTCUT}... (Press Ctrl+C to exit)")
     # stop the listener when Ctrl+C is pressed
