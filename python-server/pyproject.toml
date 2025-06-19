@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools", "wheel", "pynput", "PyQt6"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrapbook"
+version = "0.0.1"
+authors = [
+  { name="Yanai Shaviv", email="yanaishavivra@gmail.com" },
+]
+description = "documentation tool"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
