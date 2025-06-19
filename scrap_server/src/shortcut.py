@@ -12,7 +12,7 @@ def open_overlay():
     subprocess.run([sys.executable, command_file])
 
 
-if __name__ == "__main__":
+def start_listener():
     listener = keyboard.GlobalHotKeys({SHORTCUT: open_overlay})
     listener.start()
     print(f"Listening for {SHORTCUT}... (Press Ctrl+C to exit)")
@@ -27,3 +27,6 @@ if __name__ == "__main__":
         listener.stop()
         print("Listener stopped.")
         sys.exit(0)
+
+if __name__ == "__main__":
+    start_listener()

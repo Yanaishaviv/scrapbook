@@ -3,7 +3,7 @@
 Installations:
 
 pip:
-1. keyboard
+1. pynput
 2. PyQt6
 
 
