@@ -1,11 +1,11 @@
 from pynput import keyboard
 import subprocess
 import sys
-import qt_stuff
+from . import overlay
 from inspect import getsourcefile
 
 SHORTCUT = "<ctrl>+8"
-command_file = getsourcefile(qt_stuff)
+command_file = getsourcefile(overlay)
 
 
 def open_overlay():
@@ -27,6 +27,7 @@ def start_listener():
         listener.stop()
         print("Listener stopped.")
         sys.exit(0)
+
 
 if __name__ == "__main__":
     start_listener()
