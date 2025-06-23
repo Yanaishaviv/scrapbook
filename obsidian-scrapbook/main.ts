@@ -3,19 +3,27 @@ import { createServer, IncomingMessage, ServerResponse } from "http";
 import { parse } from "url";
 import { v4 as uuidv4 } from "uuid";
 
+enum Importance {
+  High = "High",
+  Medium = "Medium",
+  Low = "Low",
+}
+
+const IMPORTANCE_ORDER = {
+  [Importance.High]: 3,
+  [Importance.Medium]: 2,
+  [Importance.Low]: 1,
+};
+
 interface Question {
-  id: string;
   title: string;
-  importance: "High" | "Medium" | "Low";
+  importance: Importance;
   estimatedTime?: number; // minutes
   startTime?: Date;
   timeSpent: number; // minutes
   completed: boolean;
-  createdAt: Date;
 }
-
 interface ScrapbookSettings {
-  currentQuestionId?: string;
   questionStartTime?: string;
   timeSpent: number;
   frontendUrl: string;
@@ -35,7 +43,7 @@ interface DocumentationRequest {
 
 interface NewQuestionRequest {
   title: string;
-  importance?: "High" | "Medium" | "Low";
+  importance?: Importance;
   estimatedTime?: number;
 }
 
@@ -52,7 +60,6 @@ export default class ScrapbookPlugin extends Plugin {
   questionTimer: NodeJS.Timeout | null = null;
   thinkingModeTimer: NodeJS.Timeout | null = null;
   overtimeCheckTimer: NodeJS.Timeout | null = null;
-  questions: Question[] = [];
   questionsFilePath = "questions.md";
 
   async onload() {
@@ -62,7 +69,6 @@ export default class ScrapbookPlugin extends Plugin {
   }
 
   async onLayoutReady() {
-    await this.loadQuestions();
     await this.startAPIServer();
     this.initializeTimers();
     this.scheduleThinkingMode();
@@ -87,7 +93,7 @@ export default class ScrapbookPlugin extends Plugin {
   }
 
   async saveCurrentState() {
-    if (this.getCurrentQuestion()) {
+    if (await this.getCurrentQuestion()) {
       this.settings.timeSpent = this.calculateCurrentTimeSpent();
       await this.saveSettings();
     }
@@ -95,75 +101,123 @@ export default class ScrapbookPlugin extends Plugin {
 
   // === QUESTION MANAGEMENT ===
 
-  async loadQuestions() {
+  async getQuestionsFileContent(): Promise<string> {
     const file = this.app.vault.getAbstractFileByPath(this.questionsFilePath);
     if (file instanceof TFile) {
-      const content = await this.app.vault.read(file);
-      this.questions = this.parseQuestionsFromMarkdown(content);
+      return this.app.vault.read(file);
     } else {
-      // Create questions file if it doesn't exist
+      console.log(
+        "When finding questions, Questions file not found, creating new one..."
+      );
       await this.createQuestionsFile();
+      return this.getQuestionsFileContent();
     }
   }
+  parseAdditionalFields(
+    lines: string[],
+    title: string,
+    completed: boolean
+  ): Question {
+    let importance: Importance = Importance.Low;
+    let estimatedTime: number | undefined = undefined;
+    let startTime: Date | undefined = undefined;
+    let timeSpent: number = 0;
+    lines
+      .flatMap((line) => line.split(", ").map((line) => line.trim()))
+      .forEach((fieldLine) => {
+        if (fieldLine.includes("Importance:")) {
+          const parsedImportance = fieldLine.split("Importance:")[1].trim();
+          if (parsedImportance in Importance) {
+            importance = parsedImportance as Importance;
+          }
+        } else if (fieldLine.includes("Estimated:")) {
+          const timeStr = fieldLine.split("Estimated:")[1].trim();
+          estimatedTime = this.parseTimeString(timeStr);
+        } else if (fieldLine.includes("Started:")) {
+          const timeStr = fieldLine.split("Started:")[1].trim();
+          startTime = new Date(timeStr);
+        } else if (fieldLine.includes("Time Spent:")) {
+          const timeStr = fieldLine.split("Time Spent:")[1].trim();
+          timeSpent = this.parseTimeString(timeStr);
+        }
+      });
+    return {
+      title,
+      importance,
+      estimatedTime,
+      startTime,
+      timeSpent,
+      completed,
+    };
+  }
 
-  parseQuestionsFromMarkdown(content: string): Question[] {
-    const questions: Question[] = [];
-    const lines = content.split("\n");
-    let currentSection = "";
+  async getCurrentQuestion(): Promise<Question | null> {
+    const content = await this.getQuestionsFileContent();
+    const sections = content.split("## ");
+    const activeSection = sections.find((section) =>
+      section.startsWith("Active")
+    );
+    if (!activeSection) return null;
+    const lines = activeSection
+      .split("\n")
+      .slice(1)
+      .map((line) => line.trim());
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-
-      if (line.startsWith("## ")) {
-        currentSection = line.substring(3).toLowerCase();
-        continue;
-      }
-
+    for (const line of lines) {
       if (line.startsWith("- [")) {
-        const completed = line.startsWith("- [x]");
+        const completed = line.startsWith("- [x]"); // Check if user checked the question by hand
         const titleMatch = line.match(/\*\*(.*?)\*\*/);
         if (!titleMatch) continue;
 
         const title = titleMatch[1];
-        const question: Question = {
-          id: uuidv4(),
-          title,
-          importance: "Medium",
-          timeSpent: 0,
-          completed,
-          createdAt: new Date(),
-        };
-
-        // Parse additional fields from subsequent lines
-        let j = i + 1;
-        while (j < lines.length && lines[j].trim().startsWith("  - ")) {
-          const fieldLine = lines[j].trim();
-          if (fieldLine.includes("Importance:")) {
-            const importance = fieldLine.split("Importance:")[1].trim() as
-              | "High"
-              | "Medium"
-              | "Low";
-            if (["High", "Medium", "Low"].includes(importance)) {
-              question.importance = importance;
-            }
-          } else if (fieldLine.includes("Estimated:")) {
-            const timeStr = fieldLine.split("Estimated:")[1].trim();
-            question.estimatedTime = this.parseTimeString(timeStr);
-          } else if (fieldLine.includes("Started:")) {
-            const timeStr = fieldLine.split("Started:")[1].trim();
-            question.startTime = new Date(timeStr);
-          } else if (fieldLine.includes("Time Spent:")) {
-            const timeStr = fieldLine.split("Time Spent:")[1].trim();
-            question.timeSpent = this.parseTimeString(timeStr);
-          }
-          j++;
-        }
-
-        questions.push(question);
-        i = j - 1;
+        return this.parseAdditionalFields(lines, title, completed);
       }
     }
 
+    return null;
+  }
+
+  async getSectionQuestions(section: string): Promise<Question[]> {
+    const questions: Question[] = [];
+    const content = await this.getQuestionsFileContent();
+    const sections = content.split("## ");
+    const targetSection = sections.find((sec) => sec.startsWith(section));
+    if (!targetSection) {
+      console.log(`Section "${section}" not found in questions file.`);
+      return questions;
+    }
+    const lines = targetSection
+      .split("\n")
+      .slice(1)
+      .map((line) => line.trim());
+    for (const line of lines) {
+      if (line.startsWith("- [")) {
+        const completed = line.startsWith("- [x]"); // Check if user checked the question by hand
+        const titleMatch = line.match(/\*\*(.*?)\*\*/);
+        if (!titleMatch) continue;
+        questions.push(
+          this.parseAdditionalFields([line], titleMatch[1], completed)
+        );
+      }
+    }
+    return questions;
+  }
+
+  async getPendingQuestions(): Promise<Question[]> {
+    return await this.getSectionQuestions("Pending");
+  }
+
+  async getCompletedQuestions(): Promise<Question[]> {
+    return await this.getSectionQuestions("Completed");
+  }
+
+  async getAllQuestions(): Promise<Question[]> {
+    const questions: Question[] = await this.getPendingQuestions();
+    questions.push(...(await this.getCompletedQuestions()));
+    const activeQuestion = await this.getCurrentQuestion();
+    if (activeQuestion) {
+      questions.push(activeQuestion);
+    }
     return questions;
   }
 
@@ -192,109 +246,82 @@ export default class ScrapbookPlugin extends Plugin {
     }
   }
 
-  getCurrentQuestion(): Question | null {
-    if (this.settings.currentQuestionId) {
-      return (
-        this.questions.find(
-          (q) => q.id === this.settings.currentQuestionId && !q.completed
-        ) || null
-      );
-    }
-    return this.questions.find((q) => !q.completed) || null;
-  }
-
-  getNextQuestion(): Question | null {
-    const current = this.getCurrentQuestion();
-    const pending = this.questions.filter(
-      (q) => !q.completed && q.id !== current?.id
-    );
-
-    // Sort by importance: High > Medium > Low
-    const importanceOrder = { High: 3, Medium: 2, Low: 1 };
-    return (
-      pending.sort(
-        (a, b) => importanceOrder[b.importance] - importanceOrder[a.importance]
-      )[0] || null
-    );
-  }
-
   async addQuestion(questionData: NewQuestionRequest) {
     const question: Question = {
-      id: uuidv4(),
       title: questionData.title,
-      importance: questionData.importance || "Medium",
+      importance: questionData.importance || Importance.Low,
       estimatedTime: questionData.estimatedTime,
       timeSpent: 0,
       completed: false,
-      createdAt: new Date(),
     };
-
-    this.questions.push(question);
-    await this.updateQuestionsFile();
-
-    // If no current question, make this the current one
-    if (!this.getCurrentQuestion()) {
-      await this.setCurrentQuestion(question);
-    }
+    const activeQuestion = (await this.getCurrentQuestion()) || undefined;
+    const restOfQuestions = [question];
+    restOfQuestions.push(...(await this.getPendingQuestions()));
+    restOfQuestions.push(...(await this.getCompletedQuestions()));
+    await this.updateQuestionsFile(restOfQuestions, activeQuestion);
   }
 
   async completeCurrentQuestion() {
-    // Move to next question
-    const next1 = this.getNextQuestion();
-    if (next1) {
-      await this.setCurrentQuestion(next1);
+    const current = await this.getCurrentQuestion();
+    if (!current) {
+      this.notifyNoQuestion();
+      return;
     }
-    console.log(`Current question completed, moving to next: ${next1?.title}`);
-    console.log("Completing current question...");
-    const current = this.getCurrentQuestion();
-    if (!current) return;
 
     // Update time spent
     current.timeSpent = this.calculateCurrentTimeSpent();
     current.completed = true;
 
     // Clear current question
-    this.settings.currentQuestionId = undefined;
     this.settings.questionStartTime = undefined;
     this.settings.timeSpent = 0;
 
-    await this.updateQuestionsFile();
     await this.saveSettings();
 
     // Move to next question
-    const next = this.getNextQuestion();
-    if (next) {
-      await this.setCurrentQuestion(next);
+    const pendingQuestions = await this.getPendingQuestions();
+    let activeQuestion: Question | undefined = undefined;
+    if (pendingQuestions.length > 0) {
+      activeQuestion = pendingQuestions.shift()!;
     }
+    pendingQuestions.push(current);
+    const completedQuestions = await this.getCompletedQuestions();
+    pendingQuestions.push(...completedQuestions);
+    await this.updateQuestionsFile(pendingQuestions, activeQuestion);
 
     this.stopQuestionTimer();
     new Notice(`Question completed: ${current.title}`);
   }
 
-  async setCurrentQuestion(question: Question) {
-    this.settings.currentQuestionId = question.id;
+  async onChangeQuestion(question: Question) {
     this.settings.questionStartTime = new Date().toISOString();
     this.settings.timeSpent = question.timeSpent;
 
-    question.startTime = new Date();
-
-    await this.updateQuestionsFile();
     await this.saveSettings();
+
+    if (!question.startTime) {
+      question.startTime = new Date();
+    }
 
     // Start timer
     this.startQuestionTimer();
 
     // Notify frontend
+    this.notifyNewQuestion(question.title);
+  }
+
+  async notifyNoQuestion() {
+    await this.notifyNewQuestion("No active question");
+  }
+
+  async notifyNewQuestion(questionTitle: string) {
     await this.notifyFrontend("/current-question", {
       question: {
-        id: question.id,
-        title: question.title,
-        importance: question.importance,
-        estimatedTime: question.estimatedTime,
+        title: questionTitle,
       },
     });
 
-    new Notice(`Started: ${question.title}`);
+    new Notice(`Started: ${questionTitle}`);
   }
 
   calculateCurrentTimeSpent(): number {
@@ -311,8 +338,8 @@ export default class ScrapbookPlugin extends Plugin {
 
   // === TIMER MANAGEMENT ===
 
-  initializeTimers() {
-    if (this.getCurrentQuestion() && !this.settings.onBreak) {
+  async initializeTimers() {
+    if ((await this.getCurrentQuestion()) && !this.settings.onBreak) {
       this.startQuestionTimer();
     }
   }
@@ -345,8 +372,8 @@ export default class ScrapbookPlugin extends Plugin {
     }
   }
 
-  checkOvertime() {
-    const current = this.getCurrentQuestion();
+  async checkOvertime() {
+    const current = await this.getCurrentQuestion();
     if (!current || !current.estimatedTime) return;
 
     const timeSpent = this.calculateCurrentTimeSpent();
@@ -400,11 +427,10 @@ export default class ScrapbookPlugin extends Plugin {
     // Resume after 8 minutes
     setTimeout(async () => {
       new Notice("Thinking mode complete. Back to work!");
-      const current = this.getCurrentQuestion();
+      const current = await this.getCurrentQuestion();
       if (current) {
         await this.notifyFrontend("/current-question", {
           question: {
-            id: current.id,
             title: current.title,
             importance: current.importance,
             estimatedTime: current.estimatedTime,
@@ -426,18 +452,23 @@ export default class ScrapbookPlugin extends Plugin {
 
   async createQuestionsFile() {
     const content = `# Questions Queue
-
 ## Active
-
+- [ ] **Current Question Title**
+- Importance: High
+- Estimated: 2h
+- Started: 2025-06-19 10:30
+- Time Spent: 1h 23m
 ## Pending
-
+- [ ] **Next Question** (Importance: Medium, Estimated: 1h)
+- [ ] **Another Question** (Importance: Low, Estimated: 30m)
 ## Completed
+- [x] **Previous Question** (Time Spent: 45m/1h)
 `;
     await this.app.vault.create(this.questionsFilePath, content);
   }
 
-  async updateQuestionsFile() {
-    const content = this.generateQuestionsMarkdown();
+  async updateQuestionsFile(questions: Question[], active?: Question) {
+    const content = this.generateQuestionsMarkdown(questions, active);
 
     const file = this.app.vault.getAbstractFileByPath(this.questionsFilePath);
     if (file instanceof TFile) {
@@ -445,47 +476,54 @@ export default class ScrapbookPlugin extends Plugin {
     } else {
       await this.app.vault.create(this.questionsFilePath, content);
     }
+    const updatedActive = await this.getCurrentQuestion();
+    if (updatedActive) {
+      this.onChangeQuestion(updatedActive);
+    } else {
+      this.notifyNoQuestion();
+    }
   }
 
-  generateQuestionsMarkdown(): string {
-    const active = this.questions.filter(
-      (q) => !q.completed && q.id === this.settings.currentQuestionId
-    );
-    const pending = this.questions.filter(
-      (q) => !q.completed && q.id !== this.settings.currentQuestionId
-    );
-    const completed = this.questions.filter((q) => q.completed);
+  generateQuestionsMarkdown(questions: Question[], active?: Question): string {
+    const notCompleted = questions.filter((q) => !q.completed);
+    const completed = questions.filter((q) => q.completed);
 
-    // Sort by importance
-    const importanceOrder = { High: 3, Medium: 2, Low: 1 };
-    pending.sort(
-      (a, b) => importanceOrder[b.importance] - importanceOrder[a.importance]
-    );
+    if (notCompleted) {
+      notCompleted.sort(
+        (a, b) =>
+          IMPORTANCE_ORDER[b.importance] - IMPORTANCE_ORDER[a.importance]
+      );
+      if (!active) {
+        active = notCompleted.shift(); // Take the first one as active
+      }
+    }
 
     let content = "# Questions Queue\n\n## Active\n";
 
-    active.forEach((q) => {
-      content += `- [ ] **${q.title}**\n`;
-      content += `  - Importance: ${q.importance}\n`;
-      if (q.estimatedTime)
-        content += `  - Estimated: ${this.formatTimeString(q.estimatedTime)}\n`;
-      if (q.startTime)
-        content += `  - Started: ${q.startTime
+    if (active) {
+      content += `- [ ] **${active.title}**\n`;
+      content += `  - Importance: ${active.importance}\n`;
+      if (active.estimatedTime)
+        content += `  - Estimated: ${this.formatTimeString(
+          active.estimatedTime
+        )}\n`;
+      if (active.startTime)
+        content += `  - Started: ${active.startTime
           .toISOString()
           .slice(0, 16)
           .replace("T", " ")}\n`;
       content += `  - Time Spent: ${this.formatTimeString(
         this.calculateCurrentTimeSpent()
       )}\n\n`;
-    });
+    }
 
     content += "## Pending\n";
-    pending.forEach((q) => {
+    notCompleted.forEach((q) => {
       content += `- [ ] **${q.title}**`;
       const details: Array<String> = [];
       details.push(`Importance: ${q.importance}`);
       if (q.estimatedTime)
-        details.push(`Est: ${this.formatTimeString(q.estimatedTime)}`);
+        details.push(`Estimated: ${this.formatTimeString(q.estimatedTime)}`);
       if (details.length > 0) content += ` (${details.join(", ")})`;
       content += "\n";
     });
@@ -495,10 +533,10 @@ export default class ScrapbookPlugin extends Plugin {
       content += `- [x] **${q.title}**`;
       const details: Array<String> = [];
       if (q.timeSpent > 0)
-        details.push(`Time: ${this.formatTimeString(q.timeSpent)}`);
+        details.push(`Time Spent: ${this.formatTimeString(q.timeSpent)}`);
       if (q.estimatedTime)
-        details.push(`${this.formatTimeString(q.estimatedTime)}`);
-      if (details.length > 0) content += ` (${details.join("/")})`;
+        details.push(`Estimated: ${this.formatTimeString(q.estimatedTime)}`);
+      if (details.length > 0) content += ` (${details.join(", ")})`;
       content += "\n";
     });
 
@@ -545,8 +583,10 @@ export default class ScrapbookPlugin extends Plugin {
   // === API SERVER ===
 
   async startAPIServer() {
+    console.log("Starting Scrapbook API server...");
     this.server = createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
+        console.log(`Received request: ${req.method} ${req.url}`);
         // Enable CORS
         res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -561,27 +601,7 @@ export default class ScrapbookPlugin extends Plugin {
         const parsedUrl = parse(req.url || "", true);
         const path = parsedUrl.pathname;
 
-        try {
-          if (req.method === "POST") {
-            let body = "";
-            req.on("data", (chunk) => (body += chunk));
-            req.on("end", async () => {
-              try {
-                const data = JSON.parse(body);
-                await this.handleAPIRequest(path, data, res);
-              } catch (error) {
-                this.sendError(res, 400, "Invalid JSON");
-              }
-            });
-          } else if (req.method === "GET") {
-            await this.handleAPIRequest(path, null, res);
-          } else {
-            this.sendError(res, 405, "Method not allowed");
-          }
-        } catch (error) {
-          console.error("API Error:", error);
-          this.sendError(res, 500, "Internal server error");
-        }
+        this.handleAPIRequest(req, res, path);
       }
     );
 
@@ -592,7 +612,51 @@ export default class ScrapbookPlugin extends Plugin {
     });
   }
 
-  async handleAPIRequest(path: string | null, data: any, res: ServerResponse) {
+  async handleAPIRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+    path: string | null
+  ) {
+    try {
+      if (req.method === "POST") {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk));
+        req.on("end", async () => {
+          try {
+            const data = JSON.parse(body);
+            await this.handlePOSTRequest(path, data, res);
+          } catch (error) {
+            this.sendError(res, 400, "Invalid JSON");
+          }
+        });
+      } else if (req.method === "GET") {
+        await this.handleGETRequest(path, null, res);
+      } else {
+        this.sendError(res, 405, "Method not allowed");
+      }
+    } catch (error) {
+      this.sendError(res, 500, "Internal server error");
+    }
+  }
+
+  async handlePOSTRequest(path: string | null, data: any, res: ServerResponse) {
+    switch (path) {
+      case "/api/question/add":
+        await this.addQuestion(data as NewQuestionRequest);
+        this.sendSuccess(res, { message: "Question added" });
+        break;
+
+      case "/api/docs/add":
+        await this.handleDocumentationRequest(data as DocumentationRequest);
+        this.sendSuccess(res, { message: "Documentation added" });
+        break;
+
+      default:
+        this.sendError(res, 404, "POST Endpoint not found");
+    }
+  }
+
+  async handleGETRequest(path: string | null, data: any, res: ServerResponse) {
     switch (path) {
       case "/api/question/complete":
         await this.completeCurrentQuestion();
@@ -614,23 +678,13 @@ export default class ScrapbookPlugin extends Plugin {
         this.sendSuccess(res, { message: "Break ended" });
         break;
 
-      case "/api/question/add":
-        await this.addQuestion(data as NewQuestionRequest);
-        this.sendSuccess(res, { message: "Question added" });
-        break;
-
       case "/api/files":
         const files = this.getVaultFiles();
         this.sendSuccess(res, { files });
         break;
 
-      case "/api/docs/add":
-        await this.handleDocumentationRequest(data as DocumentationRequest);
-        this.sendSuccess(res, { message: "Documentation added" });
-        break;
-
       default:
-        this.sendError(res, 404, "Endpoint not found");
+        this.sendError(res, 404, "GET Endpoint not found");
     }
   }
 
@@ -655,6 +709,7 @@ export default class ScrapbookPlugin extends Plugin {
   }
 
   sendError(res: ServerResponse, code: number, message: string) {
+    console.error(`Error ${code}: ${message}`);
     res.writeHead(code, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ success: false, error: message }));
   }

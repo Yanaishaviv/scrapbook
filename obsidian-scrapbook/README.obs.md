@@ -19,11 +19,11 @@ A comprehensive research documentation tool with integrated task management and 
 Complete REST API for external tool integration:
 
 #### Inbound Endpoints (Plugin receives)
-- `POST /api/question/complete` - Mark current question as completed
-- `POST /api/break/start` - Start a break (pause timers)
-- `POST /api/break/end` - End break (resume timers)
-- `POST /api/question/add` - Add new question to queue
+- `GET /api/question/complete` - Mark current question as completed
+- `GET /api/break/start` - Start a break (pause timers)
+- `GET /api/break/end` - End break (resume timers)
 - `GET /api/files` - Get list of all vault files
+- `POST /api/question/add` - Add new question to queue
 - `POST /api/docs/add` - Add text/image to documentation
 
 #### Outbound Notifications (Plugin sends)
@@ -44,20 +44,17 @@ The plugin creates a `questions.md` file in your vault root with the following s
 
 ```markdown
 # Questions Queue
-
 ## Active
-- [ ] **Current Question Title** 
-  - Importance: High
-  - Estimated: 2h
-  - Started: 2025-06-19 10:30
-  - Time Spent: 1h 23m
-
+- [ ] **Current Question Title**
+- Importance: High
+- Estimated: 2h
+- Started: 2025-06-19 10:30
+- Time Spent: 1h 23m
 ## Pending
-- [ ] **Next Question** (Importance: Medium, Est: 1h)
-- [ ] **Another Question** (Importance: Low, Est: 30m)
-
+- [ ] **Next Question** (Importance: Medium, Estimated: 1h)
+- [ ] **Another Question** (Importance: Low, Estimated: 30m)
 ## Completed
-- [x] **Previous Question** (Time: 45m/1h)
+- [x] **Previous Question** (Time Spent: 45m/1h)
 ```
 
 ### Settings
