@@ -1,11 +1,11 @@
 from pynput import keyboard
 import subprocess
 import sys
-from . import overlay
+from . import new_input
 from inspect import getsourcefile
 
 SHORTCUT = "<ctrl>+8"
-command_file = getsourcefile(overlay)
+command_file = getsourcefile(new_input)
 
 
 def open_overlay():

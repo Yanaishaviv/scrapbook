@@ -1,5 +1,5 @@
 from scrapbook.shortcut import start_listener
-from scrapbook.display_overlay import display_question
+from scrapbook.display_question import display_question
 from threading import Thread
 
 if __name__ == "__main__":
