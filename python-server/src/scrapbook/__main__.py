@@ -3,5 +3,7 @@ from scrapbook.display_question import display_question
 from threading import Thread
 
 if __name__ == "__main__":
-    Thread(target=start_listener).start()
+    hotkeys_thread = Thread(target=start_listener)
+    hotkeys_thread.daemon = True
+    hotkeys_thread.start()
     display_question()
