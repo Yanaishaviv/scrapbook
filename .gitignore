@@ -86,6 +86,7 @@ web_modules/
 # Next.js build output
 .next
 out
+main.js
 
 # Nuxt.js build / generate output
 .nuxt
@@ -138,3 +139,5 @@ dist
 # python cache files
 __pycache__/
 *.pyc
+*.egg-info/
+build/
