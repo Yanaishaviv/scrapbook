@@ -25,10 +25,14 @@ PLACEHOLDER_TEXT = "Type something..."
 
 # === Logic ===
 
+def default_on_enter_callback(text):
+    """Default callback for when Enter is pressed."""
+    print(f"Entered text: {text}")
 
 class OverlayInput(QWidget):
-    def __init__(self):
+    def __init__(self, on_enter_callback=None):
         super().__init__()
+        self.on_enter_callback = on_enter_callback or default_on_enter_callback
         self.init_ui()
 
     def center_on_screen(self):
@@ -73,14 +77,13 @@ class OverlayInput(QWidget):
         self.show()
 
     def on_enter(self):
-        print(self.input.text())
+        self.on_enter_callback(self.input.text())
         QApplication.quit()
 
 
-def show_overlay():
-    os.system("flameshot gui -c -s")
+def show_overlay(on_enter_callback=None):
     app = QApplication(sys.argv)
-    window = OverlayInput()
+    window = OverlayInput(on_enter_callback)
     sys.exit(app.exec())
 
 
