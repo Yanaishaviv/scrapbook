@@ -54,6 +54,7 @@ PLACEHOLDER_TEXT = "Waiting for question..."
 class Communication(QObject):
     update_signal = pyqtSignal(str)
 
+
 class OverlayInput(QWidget):
     def __init__(self, comm):
         super().__init__()

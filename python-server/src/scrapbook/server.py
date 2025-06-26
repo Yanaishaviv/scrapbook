@@ -1,6 +1,7 @@
 import threading
 from flask import Flask, request, jsonify
 
+
 class QuestionServer:
     def __init__(self, comm):
         self.app = Flask(__name__)

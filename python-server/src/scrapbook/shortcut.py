@@ -1,22 +1,39 @@
 from pynput import keyboard
 import subprocess
 import sys
-from . import new_question
-from inspect import getsourcefile
-
-SHORTCUT = "<ctrl>+8"
-command_file = getsourcefile(new_question)
 
 
-def open_overlay():
-    subprocess.run([sys.executable, command_file])
+def create_shortcut(path_to_file: str) -> dict:
+    """
+    Creates a global keyboard shortcut that executes the specified Python file.
+
+    :param shortcut: The keyboard shortcut to listen for (e.g., "<alt>+<ctrl>+q").
+    :param path_to_file: The absolute path to the Python file to execute.
+    """
+    return lambda: subprocess.run([sys.executable, path_to_file])
 
 
-def start_listener():
-    listener = keyboard.GlobalHotKeys({SHORTCUT: open_overlay})
+def start_listener(shortcuts_to_paths: dict):
+    """
+    Starts a global keyboard listener that listens for specific shortcuts
+    and executes the the corresponding _files_.
+
+    example for shortcuts_to_paths:
+    ```
+    {
+        "<alt>+<ctrl>+q": "path/to/new_question.py",
+        "<alt>+<ctrl>+n": "path/to/screenshot_and_input.py"
+    }
+    ```
+    The shortcuts should be in the format recognized by pynput.
+    The paths should be absolute paths to the Python files to execute.
+    """
+    shortcut_dict = {
+        shortcut: create_shortcut(path) for shortcut, path in shortcuts_to_paths.items()
+    }
+    listener = keyboard.GlobalHotKeys(shortcut_dict)
     listener.start()
-    print(f"Listening for {SHORTCUT}... (Press Ctrl+C to exit)")
-    # stop the listener when Ctrl+C is pressed
+    print(f"Listening for {list(shortcut_dict.keys())}...")
     try:
         listener.join()
     except KeyboardInterrupt:

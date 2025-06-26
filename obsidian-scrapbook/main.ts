@@ -1,7 +1,9 @@
 import { Plugin, TFile, Notice, requestUrl } from "obsidian";
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { parse } from "url";
-import { v4 as uuidv4 } from "uuid";
+import { promises as fs } from "fs";
+import * as path from "path";
+import * as crypto from "crypto";
 
 enum Importance {
   High = "High",
@@ -35,10 +37,7 @@ interface ScrapbookSettings {
 interface DocumentationRequest {
   targetFile: string;
   text: string;
-  image?: {
-    data: string; // base64
-    filename: string;
-  };
+  imageFilename?: string;
 }
 
 interface NewQuestionRequest {
@@ -550,7 +549,6 @@ export default class ScrapbookPlugin extends Plugin {
 
   async appendToFile(targetFile: string, content: string) {
     const file = this.app.vault.getAbstractFileByPath(targetFile);
-
     if (file instanceof TFile) {
       const existingContent = await this.app.vault.read(file);
       const newContent = existingContent + "\n\n" + content;
@@ -688,15 +686,80 @@ export default class ScrapbookPlugin extends Plugin {
     }
   }
 
+  async moveFileToAttachments(externalFilePath: string): Promise<TFile | null> {
+    try {
+      // Check if the external file exists
+      const fileExists = await this.fileExists(externalFilePath);
+      if (!fileExists) {
+        new Notice(`File not found: ${externalFilePath}`);
+        return null;
+      }
+
+      // Get the file name and extension
+      const fileName = path.basename(externalFilePath);
+      const fileExt = path.extname(fileName);
+
+      // Ensure attachments folder exists
+      const attachmentsPath = "attachments";
+      if (!(await this.app.vault.adapter.exists(attachmentsPath))) {
+        await this.app.vault.createFolder(attachmentsPath);
+      }
+
+      // Read the file from external path
+      const fileBuffer = await fs.readFile(externalFilePath);
+
+      // Generate MD5 hash as filename to avoid conflicts
+      const md5FileName = this.generateMD5FileName(fileBuffer, fileExt);
+      const targetPath = `${attachmentsPath}/${md5FileName}`;
+
+      // Create the file in the vault (only if it doesn't already exist)
+      let createdFile: TFile;
+      if (await this.app.vault.adapter.exists(targetPath)) {
+        // File with same content already exists
+        createdFile = this.app.vault.getAbstractFileByPath(targetPath) as TFile;
+        new Notice(`File already exists with same content: ${targetPath}`);
+      } else {
+        const arrayBuffer = fileBuffer.buffer.slice(
+          fileBuffer.byteOffset,
+          fileBuffer.byteOffset + fileBuffer.byteLength
+        ) as ArrayBuffer;
+        createdFile = await this.app.vault.createBinary(
+          targetPath,
+          arrayBuffer
+        );
+        new Notice(`File moved to: ${targetPath}`);
+      }
+
+      return createdFile;
+    } catch (error) {
+      console.error("Error moving file:", error);
+      new Notice(`Error moving file: ${error.message}`);
+      return null;
+    }
+  }
+
+  generateMD5FileName(fileBuffer: Buffer, extension: string): string {
+    const hash = crypto.createHash("md5");
+    hash.update(fileBuffer);
+    const md5Hash = hash.digest("hex");
+    return `${md5Hash}${extension}`;
+  }
+
+  async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async handleDocumentationRequest(docReq: DocumentationRequest) {
     let content = docReq.text;
 
-    if (docReq.image) {
-      const imagePath = await this.saveImage(
-        docReq.image.data,
-        docReq.image.filename
-      );
-      content = `![[${imagePath}]]\n\n${content}`;
+    if (docReq.imageFilename) {
+      const imagePath = await this.moveFileToAttachments(docReq.imageFilename);
+      content = `![[${imagePath?.path}]]\n\n${content}`;
     }
 
     await this.appendToFile(docReq.targetFile, content);

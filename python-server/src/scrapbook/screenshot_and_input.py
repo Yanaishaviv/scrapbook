@@ -1,9 +1,31 @@
 import os
 from scrapbook.new_input import show_overlay
+from tempfile import gettempdir
+import requests
+
+screenshot_filename = os.path.join(gettempdir(), "scrapbook_tmp.png")
+
+
+def send_new_doc(question: str):
+    """
+    Sends a new question to the server.
+    """
+    requests.post(
+        "http://localhost:8080/api/docs/add",
+        json={
+            "targetFile": "scrapbook.md",
+            "text": question,
+            "imageFilename": screenshot_filename,
+        },
+    )
+
 
 def main():
-    os.system("flameshot gui -c -s")
-    show_overlay()
+    if os.path.exists(screenshot_filename):
+        os.remove(screenshot_filename)
+    os.system("flameshot gui -s -p " + screenshot_filename)
+    show_overlay(send_new_doc)
+
 
 if __name__ == "__main__":
     main()
