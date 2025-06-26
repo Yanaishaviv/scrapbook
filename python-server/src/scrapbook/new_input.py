@@ -25,9 +25,11 @@ PLACEHOLDER_TEXT = "Type something..."
 
 # === Logic ===
 
+
 def default_on_enter_callback(text):
     """Default callback for when Enter is pressed."""
     print(f"Entered text: {text}")
+
 
 class OverlayInput(QWidget):
     def __init__(self, on_enter_callback=None):
