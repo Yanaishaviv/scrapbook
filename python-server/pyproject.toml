@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel", "pynput", "PyQt6"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,4 +13,9 @@ readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
+]
+dependencies = [
+  "pynput",
+  "PyQt6",
+  "requests",
 ]

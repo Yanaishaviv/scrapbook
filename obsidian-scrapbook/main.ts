@@ -26,11 +26,9 @@ interface Question {
   completed: boolean;
 }
 interface ScrapbookSettings {
-  questionStartTime?: string;
   timeSpent: number;
   frontendUrl: string;
   apiPort: number;
-  lastThinkingMode?: string;
   onBreak: boolean;
 }
 
@@ -58,7 +56,6 @@ export default class ScrapbookPlugin extends Plugin {
   server: any;
   questionTimer: NodeJS.Timeout | null = null;
   thinkingModeTimer: NodeJS.Timeout | null = null;
-  overtimeCheckTimer: NodeJS.Timeout | null = null;
   questionsFilePath = "questions.md";
 
   async onload() {
@@ -93,7 +90,6 @@ export default class ScrapbookPlugin extends Plugin {
 
   async saveCurrentState() {
     if (await this.getCurrentQuestion()) {
-      this.settings.timeSpent = this.calculateCurrentTimeSpent();
       await this.saveSettings();
     }
   }
@@ -268,11 +264,10 @@ export default class ScrapbookPlugin extends Plugin {
     }
 
     // Update time spent
-    current.timeSpent = this.calculateCurrentTimeSpent();
+    current.timeSpent = this.settings.timeSpent;
     current.completed = true;
 
     // Clear current question
-    this.settings.questionStartTime = undefined;
     this.settings.timeSpent = 0;
 
     await this.saveSettings();
@@ -293,7 +288,6 @@ export default class ScrapbookPlugin extends Plugin {
   }
 
   async onChangeQuestion(question: Question) {
-    this.settings.questionStartTime = new Date().toISOString();
     this.settings.timeSpent = question.timeSpent;
 
     await this.saveSettings();
@@ -303,7 +297,7 @@ export default class ScrapbookPlugin extends Plugin {
     }
 
     // Start timer
-    this.startQuestionTimer();
+    this.startQuestionTimer(true);
 
     // Notify frontend
     this.notifyNewQuestion(question.title);
@@ -323,41 +317,29 @@ export default class ScrapbookPlugin extends Plugin {
     new Notice(`Started: ${questionTitle}`);
   }
 
-  calculateCurrentTimeSpent(): number {
-    if (!this.settings.questionStartTime) return this.settings.timeSpent;
-
-    const startTime = new Date(this.settings.questionStartTime);
-    const now = new Date();
-    const sessionTime = Math.floor(
-      (now.getTime() - startTime.getTime()) / (1000 * 60)
-    );
-
-    return this.settings.timeSpent + sessionTime;
-  }
-
   // === TIMER MANAGEMENT ===
 
   async initializeTimers() {
     if ((await this.getCurrentQuestion()) && !this.settings.onBreak) {
-      this.startQuestionTimer();
+      this.startQuestionTimer(false);
     }
   }
 
-  startQuestionTimer() {
+  async startQuestionTimer(fromZero: Boolean) {
     this.stopQuestionTimer();
+
+    if (fromZero) {
+      this.settings.timeSpent = 0;
+      await this.saveSettings();
+    }
 
     this.questionTimer = setInterval(() => {
       if (!this.settings.onBreak) {
-        this.checkOvertime();
+        this.settings.timeSpent += 1;
+        this.checkOvertime(this.settings.timeSpent);
+        this.saveSettings();
       }
     }, 60000); // Check every minute
-
-    // Check overtime every 5 minutes
-    this.overtimeCheckTimer = setInterval(() => {
-      if (!this.settings.onBreak) {
-        this.checkOvertime();
-      }
-    }, 5 * 60000);
   }
 
   stopQuestionTimer() {
@@ -365,17 +347,12 @@ export default class ScrapbookPlugin extends Plugin {
       clearInterval(this.questionTimer);
       this.questionTimer = null;
     }
-    if (this.overtimeCheckTimer) {
-      clearInterval(this.overtimeCheckTimer);
-      this.overtimeCheckTimer = null;
-    }
   }
 
-  async checkOvertime() {
+  async checkOvertime(timeSpent: number) {
     const current = await this.getCurrentQuestion();
     if (!current || !current.estimatedTime) return;
 
-    const timeSpent = this.calculateCurrentTimeSpent();
     const threshold = current.estimatedTime * 1.4; // 40% over
 
     if (timeSpent > threshold) {
@@ -512,7 +489,7 @@ export default class ScrapbookPlugin extends Plugin {
           .slice(0, 16)
           .replace("T", " ")}\n`;
       content += `  - Time Spent: ${this.formatTimeString(
-        this.calculateCurrentTimeSpent()
+        this.settings.timeSpent
       )}\n\n`;
     }
 
@@ -665,14 +642,14 @@ export default class ScrapbookPlugin extends Plugin {
         this.settings.onBreak = true;
         await this.saveCurrentState();
         await this.saveSettings();
+        this.stopAllTimers();
         this.sendSuccess(res, { message: "Break started" });
         break;
 
       case "/api/break/end":
         this.settings.onBreak = false;
-        this.settings.questionStartTime = new Date().toISOString();
         await this.saveSettings();
-        this.startQuestionTimer();
+        this.startQuestionTimer(false);
         this.sendSuccess(res, { message: "Break ended" });
         break;
 
