@@ -57,7 +57,7 @@ const DEFAULT_SETTINGS: ScrapbookSettings = {
   overTime: 1.4,
   thinkingTime: 8,
   workingTime: 60,
-  genericDocFilename: "scrapbook"
+  genericDocFilename: "scrapbook",
 };
 
 export default class ScrapbookPlugin extends Plugin {
@@ -393,7 +393,9 @@ export default class ScrapbookPlugin extends Plugin {
       },
     });
 
-    new Notice(`Thinking mode! Take ${this.settings.thinkingTime} minutes to reflect.`);
+    new Notice(
+      `Thinking mode! Take ${this.settings.thinkingTime} minutes to reflect.`
+    );
 
     // Resume after `this.settings.thinkingTime` minutes
     this.workingModeTimeout = setTimeout(async () => {
@@ -650,7 +652,6 @@ export default class ScrapbookPlugin extends Plugin {
 
       case "/api/break/start":
         this.settings.onBreak = true;
-        await this.saveCurrentState();
         await this.saveSettings();
         this.stopAllTimers();
         this.sendSuccess(res, { message: "Break started" });
@@ -660,12 +661,17 @@ export default class ScrapbookPlugin extends Plugin {
         this.settings.onBreak = false;
         await this.saveSettings();
         this.startQuestionTimer(false);
+        this.startThinkingModeTimer();
         this.sendSuccess(res, { message: "Break ended" });
         break;
 
       case "/api/files":
         const files = this.getVaultFiles();
         this.sendSuccess(res, { files });
+        break;
+      case "/api/question/get":
+        const question = this.getCurrentQuestion();
+        this.sendSuccess(res, { question });
         break;
 
       default:
@@ -751,7 +757,9 @@ export default class ScrapbookPlugin extends Plugin {
 
     if (!targetFile) {
       targetFile =
-        ((await this.getCurrentQuestion())?.title || this.settings.genericDocFilename) + ".md";
+        (await this.getCurrentQuestion())?.title ||
+        this.settings.genericDocFilename;
+      targetFile += ".md";
     }
     await this.appendToFile(targetFile, content);
     new Notice(`Added to ${targetFile}`);
