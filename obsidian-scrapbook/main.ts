@@ -33,7 +33,7 @@ interface ScrapbookSettings {
 }
 
 interface DocumentationRequest {
-  targetFile: string;
+  targetFile?: string;
   text: string;
   imageFilename?: string;
 }
@@ -733,14 +733,18 @@ export default class ScrapbookPlugin extends Plugin {
 
   async handleDocumentationRequest(docReq: DocumentationRequest) {
     let content = docReq.text;
-
+    let targetFile = docReq.targetFile;
     if (docReq.imageFilename) {
       const imagePath = await this.moveFileToAttachments(docReq.imageFilename);
       content = `![[${imagePath?.path}]]\n\n${content}`;
     }
-
-    await this.appendToFile(docReq.targetFile, content);
-    new Notice(`Added to ${docReq.targetFile}`);
+    
+    if (!targetFile) {
+      // todo: move to settings
+      targetFile = (await this.getCurrentQuestion())?.title + ".md" || "generic_docs.md";
+    }
+    await this.appendToFile(targetFile, content);
+    new Notice(`Added to ${targetFile}`);
   }
 
   sendSuccess(res: ServerResponse, data: any) {

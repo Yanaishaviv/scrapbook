@@ -13,7 +13,6 @@ def send_new_doc(question: str):
     requests.post(
         "http://localhost:8080/api/docs/add",
         json={
-            "targetFile": "scrapbook.md",
             "text": question,
             "imageFilename": screenshot_filename,
         },
