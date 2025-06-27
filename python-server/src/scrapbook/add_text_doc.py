@@ -9,7 +9,6 @@ def send_new_doc(text: str):
     requests.post(
         "http://localhost:8080/api/docs/add",
         json={
-            "targetFile": "scrapbook.md",
             "text": text,
         },
     )
