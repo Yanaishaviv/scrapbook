@@ -654,6 +654,12 @@ export default class ScrapbookPlugin extends Plugin {
         this.settings.onBreak = true;
         await this.saveSettings();
         this.stopAllTimers();
+        await this.notifyFrontend("/current-question", {
+          question: {
+            title: "on a break!",
+            importance: Importance.High,
+          },
+        });
         this.sendSuccess(res, { message: "Break started" });
         break;
 
@@ -662,6 +668,16 @@ export default class ScrapbookPlugin extends Plugin {
         await this.saveSettings();
         this.startQuestionTimer(false);
         this.startThinkingModeTimer();
+        
+        const currentQuestion = (await this.getCurrentQuestion())?.title;
+        if (currentQuestion) {
+          await this.notifyFrontend("/current-question", {
+            question: {
+              title: currentQuestion,
+            },
+          });
+        } else this.notifyNoQuestion();
+
         this.sendSuccess(res, { message: "Break ended" });
         break;
 
