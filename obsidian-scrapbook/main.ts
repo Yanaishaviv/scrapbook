@@ -4,6 +4,7 @@ import { parse } from "url";
 import { promises as fs } from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
+import SampleSettingTab from "settingsTab";
 
 enum Importance {
   High = "High",
@@ -25,11 +26,15 @@ interface Question {
   timeSpent: number; // minutes
   completed: boolean;
 }
-interface ScrapbookSettings {
+export interface ScrapbookSettings {
   timeSpent: number;
   frontendUrl: string;
   apiPort: number;
   onBreak: boolean;
+  overTime: number;
+  workingTime: number;
+  thinkingTime: number;
+  genericDocFilename: string;
 }
 
 interface DocumentationRequest {
@@ -49,6 +54,10 @@ const DEFAULT_SETTINGS: ScrapbookSettings = {
   frontendUrl: "http://localhost:5000",
   apiPort: 8080,
   onBreak: false,
+  overTime: 1.4,
+  thinkingTime: 8,
+  workingTime: 60,
+  genericDocFilename: "scrapbook"
 };
 
 export default class ScrapbookPlugin extends Plugin {
@@ -56,18 +65,19 @@ export default class ScrapbookPlugin extends Plugin {
   server: any;
   questionTimer: NodeJS.Timeout | null = null;
   thinkingModeTimer: NodeJS.Timeout | null = null;
+  workingModeTimeout: NodeJS.Timeout | null = null;
   questionsFilePath = "questions.md";
 
   async onload() {
     await this.loadSettings();
     this.app.workspace.onLayoutReady(this.onLayoutReady.bind(this));
+    this.addSettingTab(new SampleSettingTab(this.app, this));
     console.log("Scrapbook plugin loaded");
   }
 
   async onLayoutReady() {
     await this.startAPIServer();
     this.initializeTimers();
-    this.scheduleThinkingMode();
     console.log("Scrapbook plugin layout ready");
   }
 
@@ -322,6 +332,7 @@ export default class ScrapbookPlugin extends Plugin {
   async initializeTimers() {
     if ((await this.getCurrentQuestion()) && !this.settings.onBreak) {
       this.startQuestionTimer(false);
+      this.startThinkingModeTimer();
     }
   }
 
@@ -349,11 +360,64 @@ export default class ScrapbookPlugin extends Plugin {
     }
   }
 
+  stopThinkingTimer() {
+    if (this.thinkingModeTimer) {
+      clearInterval(this.thinkingModeTimer);
+      this.questionTimer = null;
+    }
+    if (this.workingModeTimeout) {
+      clearTimeout(this.workingModeTimeout);
+      this.workingModeTimeout = null;
+    }
+  }
+
+  startThinkingModeTimer() {
+    this.stopThinkingTimer();
+
+    this.thinkingModeTimer = setInterval(() => {
+      if (!this.settings.onBreak) this.startThinkingMode();
+    }, this.settings.workingTime * 60 * 1000);
+  }
+
+  async startThinkingMode() {
+    // Save current state
+    this.settings.onBreak = true;
+    await this.saveCurrentState();
+
+    // Notify frontend
+    await this.notifyFrontend("/current-question", {
+      question: {
+        title: "Thinking mode!",
+        importance: Importance.High,
+        estimatedTime: this.settings.thinkingTime,
+      },
+    });
+
+    new Notice(`Thinking mode! Take ${this.settings.thinkingTime} minutes to reflect.`);
+
+    // Resume after `this.settings.thinkingTime` minutes
+    this.workingModeTimeout = setTimeout(async () => {
+      new Notice("Thinking mode complete. Back to work!");
+      const current = await this.getCurrentQuestion();
+      if (current) {
+        this.settings.onBreak = false;
+        await this.saveCurrentState();
+        await this.notifyFrontend("/current-question", {
+          question: {
+            title: current.title,
+            importance: current.importance,
+            estimatedTime: current.estimatedTime,
+          },
+        });
+      }
+    }, this.settings.thinkingTime * 60 * 1000);
+  }
+
   async checkOvertime(timeSpent: number) {
     const current = await this.getCurrentQuestion();
     if (!current || !current.estimatedTime) return;
 
-    const threshold = current.estimatedTime * 1.4; // 40% over
+    const threshold = current.estimatedTime * this.settings.overTime; // 40% over
 
     if (timeSpent > threshold) {
       this.notifyFrontend("/overtime-alert", {
@@ -365,63 +429,9 @@ export default class ScrapbookPlugin extends Plugin {
     }
   }
 
-  scheduleThinkingMode() {
-    // Schedule thinking mode every hour
-    const scheduleNext = () => {
-      const now = new Date();
-      const nextHour = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        now.getHours() + 1,
-        0,
-        0
-      );
-      const timeUntilNextHour = nextHour.getTime() - now.getTime();
-
-      this.thinkingModeTimer = setTimeout(() => {
-        this.startThinkingMode();
-        scheduleNext(); // Schedule the next one
-      }, timeUntilNextHour);
-    };
-
-    scheduleNext();
-  }
-
-  async startThinkingMode() {
-    // Save current state
-    await this.saveCurrentState();
-
-    // Notify frontend
-    await this.notifyFrontend("/thinking-mode", {
-      message: "Thinking mode started",
-      duration: 8, // minutes
-    });
-
-    new Notice("Thinking mode! Take 8 minutes to reflect.");
-
-    // Resume after 8 minutes
-    setTimeout(async () => {
-      new Notice("Thinking mode complete. Back to work!");
-      const current = await this.getCurrentQuestion();
-      if (current) {
-        await this.notifyFrontend("/current-question", {
-          question: {
-            title: current.title,
-            importance: current.importance,
-            estimatedTime: current.estimatedTime,
-          },
-        });
-      }
-    }, 8 * 60 * 1000);
-  }
-
   stopAllTimers() {
     this.stopQuestionTimer();
-    if (this.thinkingModeTimer) {
-      clearTimeout(this.thinkingModeTimer);
-      this.thinkingModeTimer = null;
-    }
+    this.stopThinkingTimer();
   }
 
   // === FILE OPERATIONS ===
@@ -738,10 +748,10 @@ export default class ScrapbookPlugin extends Plugin {
       const imagePath = await this.moveFileToAttachments(docReq.imageFilename);
       content = `![[${imagePath?.path}]]\n\n${content}`;
     }
-    
+
     if (!targetFile) {
-      // todo: move to settings
-      targetFile = (await this.getCurrentQuestion())?.title + ".md" || "generic_docs.md";
+      targetFile =
+        ((await this.getCurrentQuestion())?.title || this.settings.genericDocFilename) + ".md";
     }
     await this.appendToFile(targetFile, content);
     new Notice(`Added to ${targetFile}`);
@@ -767,7 +777,9 @@ export default class ScrapbookPlugin extends Plugin {
         body: JSON.stringify(data),
       });
     } catch (error) {
-      console.error("Failed to notify frontend:", error);
+      console.error(
+        `Failed to notify frontent. endpoint: ${endpoint}, data: ${data}, and error: ${error}`
+      );
     }
   }
 }
