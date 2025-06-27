@@ -13,7 +13,7 @@ def create_shortcut(path_to_file: str) -> dict:
     return lambda: subprocess.run([sys.executable, path_to_file])
 
 
-def start_listener(shortcuts_to_paths: dict):
+def start_listener(shortcuts_to_paths: dict, scrapbook_hyperkey: str):
     """
     Starts a global keyboard listener that listens for specific shortcuts
     and executes the the corresponding _files_.
@@ -29,7 +29,8 @@ def start_listener(shortcuts_to_paths: dict):
     The paths should be absolute paths to the Python files to execute.
     """
     shortcut_dict = {
-        shortcut: create_shortcut(path) for shortcut, path in shortcuts_to_paths.items()
+        scrapbook_hyperkey + "+" + shortcut: create_shortcut(path)
+        for shortcut, path in shortcuts_to_paths.items()
     }
     listener = keyboard.GlobalHotKeys(shortcut_dict)
     listener.start()
@@ -44,7 +45,3 @@ def start_listener(shortcuts_to_paths: dict):
         listener.stop()
         print("Listener stopped.")
         sys.exit(0)
-
-
-if __name__ == "__main__":
-    start_listener()
