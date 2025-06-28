@@ -266,6 +266,7 @@ export default class ScrapbookPlugin extends Plugin {
     let activeQuestion: Question | undefined;
     let restOfQuestions: Question[] = [];
     const currentQuestion = await this.getCurrentQuestion();
+    if (currentQuestion) currentQuestion.timeSpent = this.settings.timeSpent;
     if (!moveToIt) {
       activeQuestion = currentQuestion || undefined;
       restOfQuestions.push(question);
@@ -470,6 +471,7 @@ export default class ScrapbookPlugin extends Plugin {
   }
 
   async updateQuestionsFile(questions: Question[], active?: Question) {
+    const oldActive = await this.getCurrentQuestion();
     const content = this.generateQuestionsMarkdown(questions, active);
 
     const file = this.app.vault.getAbstractFileByPath(this.questionsFilePath);
@@ -480,7 +482,8 @@ export default class ScrapbookPlugin extends Plugin {
     }
     const updatedActive = await this.getCurrentQuestion();
     if (updatedActive) {
-      this.onChangeQuestion(updatedActive);
+      if (updatedActive.title !== oldActive?.title)
+        this.onChangeQuestion(updatedActive);
     } else {
       this.notifyNoQuestion();
     }
@@ -515,7 +518,7 @@ export default class ScrapbookPlugin extends Plugin {
           .slice(0, 16)
           .replace("T", " ")}\n`;
       content += `  - Time Spent: ${this.formatTimeString(
-        this.settings.timeSpent
+        active.timeSpent
       )}\n\n`;
     }
 
@@ -526,6 +529,8 @@ export default class ScrapbookPlugin extends Plugin {
       details.push(`Importance: ${q.importance}`);
       if (q.estimatedTime)
         details.push(`Estimated: ${this.formatTimeString(q.estimatedTime)}`);
+      if (q.timeSpent > 0)
+        details.push(`Time Spent: ${this.formatTimeString(q.timeSpent)}`);
       if (details.length > 0) content += ` (${details.join(", ")})`;
       content += "\n";
     });
@@ -651,7 +656,7 @@ export default class ScrapbookPlugin extends Plugin {
         await this.addQuestion(data as NewQuestionRequest, true);
         this.sendSuccess(res, { message: "Question added and moved to" });
         break;
-      
+
       case "/api/docs/add":
         await this.handleDocumentationRequest(data as DocumentationRequest);
         this.sendSuccess(res, { message: "Documentation added" });

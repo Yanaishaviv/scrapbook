@@ -28,6 +28,7 @@ def send_new_question_and_move(question: str):
         "http://localhost:8080/api/question/add-and-move",
         json={
             "title": question,
+            "importance": "High"
         }
     )
 
