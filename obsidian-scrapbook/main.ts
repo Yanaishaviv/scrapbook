@@ -128,7 +128,11 @@ export default class ScrapbookPlugin extends Plugin {
     let startTime: Date | undefined = undefined;
     let timeSpent: number = 0;
     lines
-      .flatMap((line) => line.split(", ").map((line) => line.trim()))
+      .flatMap((line) =>
+        line
+          .split(", ")
+          .map((line) => line.trim().replace(")", "").replace("(", ""))
+      )
       .forEach((fieldLine) => {
         if (fieldLine.includes("Importance:")) {
           const parsedImportance = fieldLine.split("Importance:")[1].trim();
@@ -251,7 +255,7 @@ export default class ScrapbookPlugin extends Plugin {
     }
   }
 
-  async addQuestion(questionData: NewQuestionRequest) {
+  async addQuestion(questionData: NewQuestionRequest, moveToIt: Boolean) {
     const question: Question = {
       title: questionData.title,
       importance: questionData.importance || Importance.Low,
@@ -259,8 +263,18 @@ export default class ScrapbookPlugin extends Plugin {
       timeSpent: 0,
       completed: false,
     };
-    const activeQuestion = (await this.getCurrentQuestion()) || undefined;
-    const restOfQuestions = [question];
+    let activeQuestion: Question | undefined;
+    let restOfQuestions: Question[] = [];
+    const currentQuestion = await this.getCurrentQuestion();
+    if (!moveToIt) {
+      activeQuestion = currentQuestion || undefined;
+      restOfQuestions.push(question);
+    } else {
+      activeQuestion = question;
+      if (currentQuestion) {
+        restOfQuestions.push(currentQuestion);
+      }
+    }
     restOfQuestions.push(...(await this.getPendingQuestions()));
     restOfQuestions.push(...(await this.getCompletedQuestions()));
     await this.updateQuestionsFile(restOfQuestions, activeQuestion);
@@ -629,10 +643,15 @@ export default class ScrapbookPlugin extends Plugin {
   async handlePOSTRequest(path: string | null, data: any, res: ServerResponse) {
     switch (path) {
       case "/api/question/add":
-        await this.addQuestion(data as NewQuestionRequest);
+        await this.addQuestion(data as NewQuestionRequest, false);
         this.sendSuccess(res, { message: "Question added" });
         break;
 
+      case "/api/question/add-and-move":
+        await this.addQuestion(data as NewQuestionRequest, true);
+        this.sendSuccess(res, { message: "Question added and moved to" });
+        break;
+      
       case "/api/docs/add":
         await this.handleDocumentationRequest(data as DocumentationRequest);
         this.sendSuccess(res, { message: "Documentation added" });
@@ -668,7 +687,7 @@ export default class ScrapbookPlugin extends Plugin {
         await this.saveSettings();
         this.startQuestionTimer(false);
         this.startThinkingModeTimer();
-        
+
         const currentQuestion = (await this.getCurrentQuestion())?.title;
         if (currentQuestion) {
           await this.notifyFrontend("/current-question", {
