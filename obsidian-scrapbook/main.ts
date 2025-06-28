@@ -128,7 +128,11 @@ export default class ScrapbookPlugin extends Plugin {
     let startTime: Date | undefined = undefined;
     let timeSpent: number = 0;
     lines
-      .flatMap((line) => line.split(", ").map((line) => line.trim()))
+      .flatMap((line) =>
+        line
+          .split(", ")
+          .map((line) => line.trim().replace(")", "").replace("(", ""))
+      )
       .forEach((fieldLine) => {
         if (fieldLine.includes("Importance:")) {
           const parsedImportance = fieldLine.split("Importance:")[1].trim();
@@ -668,7 +672,7 @@ export default class ScrapbookPlugin extends Plugin {
         await this.saveSettings();
         this.startQuestionTimer(false);
         this.startThinkingModeTimer();
-        
+
         const currentQuestion = (await this.getCurrentQuestion())?.title;
         if (currentQuestion) {
           await this.notifyFrontend("/current-question", {
